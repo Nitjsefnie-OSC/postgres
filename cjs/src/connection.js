@@ -767,7 +767,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
 
   async function fetchArrayTypes() {
     needsTypes = false
-    const types = await new Query([`
+    const query = new Query([`
       select b.oid, b.typarray
       from pg_catalog.pg_type a
       left join pg_catalog.pg_type b on b.oid = a.typelem
@@ -775,7 +775,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       group by b.oid, b.typarray
       order by b.oid
     `], [], execute)
-    types.forEach(({ oid, typarray }) => addArrayType(oid, typarray))
+    const resolve = query.resolve
+    query.resolve = types => (types.forEach(({ oid, typarray }) => addArrayType(oid, typarray)), resolve(types))
+    await query
   }
 
   function addArrayType(oid, typarray) {
