@@ -163,6 +163,62 @@ t('Array in first query of new client', async() => {
   return ['1,2', x.join()]
 })
 
+async function withoutArrayTypes(fn) {
+  const unhandled = []
+      , onUnhandled = e => unhandled.push(e.code)
+      , grant = () => exec('psql', ['-d', 'postgres_js_test', '-c', 'grant select on pg_catalog.pg_type to public'])
+
+  // Deno's process.on('unhandledRejection') is a stub, but Deno exits on an unhandled rejection anyway
+  globalThis.Deno || process.on('unhandledRejection', onUnhandled)
+  await exec('psql', ['-c', 'drop user if exists postgres_js_test_no_types'])
+  await exec('psql', ['-c', 'create user postgres_js_test_no_types'])
+  await exec('psql', ['-d', 'postgres_js_test', '-c', 'revoke select on pg_catalog.pg_type from public'])
+
+  const sql = postgres({
+    ...options,
+    user: 'postgres_js_test_no_types',
+    host: process.env.PGSOCKET || '/tmp' // eslint-disable-line
+  })
+
+  try {
+    const result = await fn({ sql, grant })
+    await delay(0) // Node reports a rejection left unhandled before the next timer
+    return JSON.stringify({ ...result, unhandled })
+  } finally {
+    await grant()
+    globalThis.Deno || process.off('unhandledRejection', onUnhandled)
+    await sql.end({ timeout: 0 })
+    await exec('psql', ['-c', 'drop user postgres_js_test_no_types'])
+  }
+}
+
+t('Failed array types fetch rejects the first query and keeps the client usable', async() => [
+  '{"first":"42501","later":"1,2","unhandled":[]}',
+  await withoutArrayTypes(async({ sql, grant }) => {
+    const first = await sql`select 1`.catch(e => e.code)
+    await grant()
+    const later = await sql`select ${ sql.array([1, 2]) }::int[] as x`.then(([{ x }]) => x.join(), e => e.code)
+    return { first, later }
+  })
+])
+
+t('Failed array types fetch rejects every query waiting on the connection', async() => [
+  '{"waiting":["42501","42501"],"unhandled":[]}',
+  await withoutArrayTypes(async({ sql }) => ({
+    waiting: await Promise.all([
+      sql`select 1`.catch(e => e.code),
+      sql`select ${ sql.array([3, 4]) }::int[] as x`.catch(e => e.code)
+    ])
+  }))
+])
+
+t('Failed array types fetch rejects a waiting reserve', async() => [
+  '{"reserved":"42501","unhandled":[]}',
+  await withoutArrayTypes(async({ sql }) => ({
+    reserved: await sql.reserve().then(r => (r.release(), 'reserved'), e => e.code)
+  }))
+])
+
 t('Escapes', async() => {
   return ['hej"hej', Object.keys((await sql`select 1 as ${ sql('hej"hej') }`)[0])[0]]
 })

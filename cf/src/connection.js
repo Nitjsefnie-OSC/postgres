@@ -562,8 +562,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       }
 
       if (needsTypes) {
-        initial.reserve && (initial = null)
-        return fetchArrayTypes()
+        const reserve = initial.reserve ? initial : null
+        reserve && (initial = null)
+        return fetchArrayTypes(reserve)
       }
 
       initial && !initial.reserve && execute(initial)
@@ -571,6 +572,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
       initial = null
       return
     }
+
+    if (needsTypes)
+      return terminate()
 
     while (sent.length && (query = sent.shift()) && (query.active = true, query.cancelled))
       Connection(options).cancel(query.state, query.cancelled.resolve, query.cancelled.reject)
@@ -767,7 +771,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     backend.secret = x.readUInt32BE(9)
   }
 
-  async function fetchArrayTypes() {
+  async function fetchArrayTypes(reserve) {
     needsTypes = false
     const query = new Query([`
       select b.oid, b.typarray
@@ -779,7 +783,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
     `], [], execute)
     const resolve = query.resolve
     query.resolve = types => (types.forEach(({ oid, typarray }) => addArrayType(oid, typarray)), resolve(types))
-    await query
+    const reject = query.reject
+    query.reject = err => (needsTypes = true, reserve && reserve.reject(err), reject(err))
+    await query.catch(() => { /* settled by query.reject above; ReadyForQuery closes the connection */ })
   }
 
   function addArrayType(oid, typarray) {
