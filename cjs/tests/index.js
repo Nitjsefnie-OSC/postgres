@@ -1901,6 +1901,41 @@ t('Multiple hosts', {
   return [[id1, id2, id1].join(','), result.join(',')]
 })
 
+t('Bracketed IPv6 host with port', async() => {
+  const sql = postgres('postgres://[::1]:5432')
+  const actual = JSON.stringify([sql.options.host, sql.options.port])
+  await sql.end()
+  return ['[["::1"],[5432]]', actual]
+})
+
+t('Bracketed IPv6 host uses the default port', async() => {
+  const sql = postgres('postgres://[2001:db8::1]')
+  const actual = JSON.stringify([sql.options.host, sql.options.port])
+  await sql.end()
+  return ['[["2001:db8::1"],[5432]]', actual]
+})
+
+t('Multiple bracketed IPv6 hosts keep their ports', async() => {
+  const sql = postgres('postgres://[::1]:5432,[2001:db8::2]:5433')
+  const actual = JSON.stringify([sql.options.host, sql.options.port])
+  await sql.end()
+  return ['[["::1","2001:db8::2"],[5432,5433]]', actual]
+})
+
+t('Bare IPv6 host option uses the default port', async() => {
+  const sql = postgres({ host: '::1' })
+  const actual = JSON.stringify([sql.options.host, sql.options.port])
+  await sql.end()
+  return ['[["::1"],[5432]]', actual]
+})
+
+t('Multiple hostname ports still parse', async() => {
+  const sql = postgres('postgres://h1:1,h2:2')
+  const actual = JSON.stringify([sql.options.host, sql.options.port])
+  await sql.end()
+  return ['[["h1","h2"],[1,2]]', actual]
+})
+
 t('Escaping supports schemas and tables', async() => {
   await sql`create schema a`
   await sql`create table a.b (c int)`

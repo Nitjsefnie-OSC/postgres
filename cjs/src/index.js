@@ -463,8 +463,8 @@ function parseOptions(a, b) {
   }
 
   return {
-    host            : Array.isArray(host) ? host : host.split(',').map(x => x.split(':')[0]),
-    port            : Array.isArray(port) ? port : host.split(',').map(x => parseInt(x.split(':')[1] || port)),
+    host            : Array.isArray(host) ? host : host.split(',').map(x => parseHost(x)[0]),
+    port            : Array.isArray(port) ? port : host.split(',').map(x => parseInt(parseHost(x)[1] || port)),
     path            : o.path || host.indexOf('/') > -1 && host + '/.s.PGSQL.' + port,
     database        : o.database || o.db || (url.pathname || '').slice(1) || env.PGDATABASE || user,
     user            : user,
@@ -498,6 +498,13 @@ function parseOptions(a, b) {
     shared          : { retries: 0, typeArrayMap: {} },
     ...mergeUserTypes(o.types)
   }
+}
+
+function parseHost(x) {
+  const bracketed = /^\[([^\]]+)\](?::(.*))?$/.exec(x)
+  return bracketed
+    ? [bracketed[1], bracketed[2]]
+    : x.indexOf(':') !== x.lastIndexOf(':') ? [x] : x.split(':')
 }
 
 function tsa(o, url, env) {
